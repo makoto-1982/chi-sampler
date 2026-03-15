@@ -31,8 +31,6 @@
     body{
       font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
       overscroll-behavior:none;
-      position:fixed;
-      inset:0;
     }
 
     .app{
@@ -40,11 +38,13 @@
       min-height:100dvh;
       max-width:520px;
       margin:0 auto;
+
       display:flex;
       flex-direction:column;
       justify-content:flex-end;
       align-items:center;
       gap:24px;
+
       padding:
         max(24px, env(safe-area-inset-top))
         20px
@@ -78,8 +78,10 @@
       background:none;
       padding:0;
       margin:0;
+
       width:min(86vw, 420px);
       aspect-ratio:1 / 1;
+
       position:relative;
       display:block;
       flex:0 0 auto;
@@ -125,100 +127,128 @@
   </main>
 
   <script>
-    const AUDIO_FILE = "chee.mp3";
-    const POOL_SIZE = 8;
+    const AUDIO_FILE = "chee.wav";
+
+    let audioContext = null;
+    let audioBuffer = null;
+    let loadPromise = null;
+    let unlocked = false;
+    let touchHandled = false;
+
+    function getAudioContext() {
+      if (!audioContext) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AC({
+          latencyHint: "interactive"
+        });
+      }
+      return audioContext;
+    }
+
+    async function loadBuffer() {
+      if (audioBuffer) return audioBuffer;
+      if (loadPromise) return loadPromise;
+
+      loadPromise = (async () => {
+        const ctx = getAudioContext();
+        const res = await fetch(AUDIO_FILE, { cache: "force-cache" });
+        if (!res.ok) throw new Error("audio file load failed");
+
+        const arrayBuffer = await res.arrayBuffer();
+        audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        return audioBuffer;
+      })();
+
+      return loadPromise;
+    }
+
+    async function unlockAudio() {
+      const ctx = getAudioContext();
+
+      if (ctx.state !== "running") {
+        await ctx.resume();
+      }
+
+      if (!unlocked) {
+        const silent = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = silent;
+        source.connect(ctx.destination);
+        source.start(0);
+        unlocked = true;
+      }
+    }
+
+    function playSound() {
+      if (!audioContext || !audioBuffer) return;
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      const gain = audioContext.createGain();
+      gain.gain.value = 1.0;
+
+      source.connect(gain);
+      gain.connect(audioContext.destination);
+
+      source.start(0);
+    }
 
     const pad = document.getElementById("pad");
-
-    let audioPool = [];
-    let poolIndex = 0;
-    let initialized = false;
 
     function setActive(flag) {
       pad.classList.toggle("active", flag);
     }
 
-    function createAudioPool() {
-      audioPool = [];
-      for (let i = 0; i < POOL_SIZE; i++) {
-        const a = new Audio(AUDIO_FILE);
-        a.preload = "auto";
-        a.playsInline = true;
-        a.setAttribute("playsinline", "");
-        a.setAttribute("webkit-playsinline", "");
-        audioPool.push(a);
-      }
-    }
-
-    async function unlockAudioPool() {
-      if (initialized) return;
-
-      createAudioPool();
-
-      // 初回タップ内で全要素を再生可能状態に寄せる
-      for (const a of audioPool) {
-        try {
-          a.muted = true;
-          a.currentTime = 0;
-          await a.play();
-          a.pause();
-          a.currentTime = 0;
-          a.muted = false;
-        } catch (e) {
-          console.error("unlock error:", e);
-        }
-      }
-
-      initialized = true;
-    }
-
-    function playFromPool() {
-      if (!initialized || audioPool.length === 0) return;
-
-      const a = audioPool[poolIndex];
-      poolIndex = (poolIndex + 1) % audioPool.length;
-
-      try {
-        a.pause();
-        a.currentTime = 0;
-        a.play().catch((e) => {
-          console.error("play error:", e);
-        });
-      } catch (e) {
-        console.error("play error:", e);
-      }
-    }
-
     async function handlePress(e) {
       e.preventDefault();
-      setActive(true);
 
-      if (!initialized) {
-        await unlockAudioPool();
+      try {
+        setActive(true);
+        await unlockAudio();
+
+        if (!audioBuffer) {
+          await loadBuffer();
+        }
+
+        playSound();
+      } catch (err) {
+        console.error(err);
       }
-
-      playFromPool();
     }
 
     function handleRelease() {
       setActive(false);
+      touchHandled = false;
     }
 
-    pad.addEventListener("touchstart", handlePress, { passive: false });
+    pad.addEventListener("touchstart", async (e) => {
+      touchHandled = true;
+      await handlePress(e);
+    }, { passive: false });
+
     pad.addEventListener("touchend", handleRelease, { passive: true });
     pad.addEventListener("touchcancel", handleRelease, { passive: true });
 
-    pad.addEventListener("mousedown", handlePress);
+    pad.addEventListener("mousedown", async (e) => {
+      if (touchHandled) return;
+      await handlePress(e);
+    });
+
     pad.addEventListener("mouseup", handleRelease);
     pad.addEventListener("mouseleave", handleRelease);
-
     pad.addEventListener("contextmenu", (e) => e.preventDefault());
     pad.addEventListener("dragstart", (e) => e.preventDefault());
 
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         setActive(false);
+        touchHandled = false;
       }
+    });
+
+    loadBuffer().catch((err) => {
+      console.error(err);
     });
   </script>
 </body>
