@@ -57,11 +57,9 @@
       width:100%;
       max-width:500px;
       aspect-ratio:500 / 182;
-
       display:flex;
       align-items:center;
       justify-content:center;
-
       margin-bottom:8px;
       flex:0 0 auto;
     }
@@ -89,7 +87,6 @@
       position:relative;
       display:block;
       flex:0 0 auto;
-
       touch-action:manipulation;
     }
 
@@ -129,96 +126,57 @@
     <button id="pad" class="pad" type="button" aria-label="チーを再生">
       <img src="chi-button.png" alt="">
     </button>
+
+    <audio id="sound" preload="auto" playsinline webkit-playsinline>
+      <source src="chee.mp3" type="audio/mpeg">
+    </audio>
   </main>
 
   <script>
-    const AUDIO_FILE = "chee.mp3";
-
-    let audioContext = null;
-    let audioBuffer = null;
-    let isLoading = false;
-
-    function getAudioContext() {
-      if (!audioContext) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AC({ latencyHint: "interactive" });
-      }
-      return audioContext;
-    }
-
-    async function loadAudio() {
-      if (audioBuffer || isLoading) return;
-      isLoading = true;
-
-      const ctx = getAudioContext();
-      const res = await fetch(AUDIO_FILE, { cache: "no-cache" });
-      if (!res.ok) throw new Error("audio fetch failed");
-
-      const buf = await res.arrayBuffer();
-      audioBuffer = await ctx.decodeAudioData(buf);
-      isLoading = false;
-    }
-
-    async function unlockAudio() {
-      const ctx = getAudioContext();
-
-      if (ctx.state !== "running") {
-        await ctx.resume();
-      }
-
-      // iPhone Safari の初回無音対策
-      const silentBuffer = ctx.createBuffer(1, 1, 22050);
-      const source = ctx.createBufferSource();
-      source.buffer = silentBuffer;
-      source.connect(ctx.destination);
-      source.start(0);
-    }
-
-    function playSound() {
-      if (!audioContext || !audioBuffer) return;
-
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      source.start(0);
-    }
-
     const pad = document.getElementById("pad");
+    const sound = document.getElementById("sound");
 
     function setActive(flag) {
       pad.classList.toggle("active", flag);
     }
 
+    async function playSound() {
+      try {
+        sound.pause();
+        sound.currentTime = 0;
+        await sound.play();
+      } catch (err) {
+        console.error("play error:", err);
+      }
+    }
+
     async function onPress(e) {
       e.preventDefault();
-
-      try {
-        setActive(true);
-        await unlockAudio();
-
-        if (!audioBuffer) {
-          await loadAudio();
-        }
-
-        playSound();
-      } catch (err) {
-        console.error(err);
-      }
+      setActive(true);
+      await playSound();
     }
 
     function onRelease() {
       setActive(false);
     }
 
-    pad.addEventListener("pointerdown", onPress);
-    pad.addEventListener("pointerup", onRelease);
-    pad.addEventListener("pointercancel", onRelease);
-    pad.addEventListener("pointerleave", onRelease);
+    pad.addEventListener("touchstart", onPress, { passive: false });
+    pad.addEventListener("touchend", onRelease, { passive: true });
+    pad.addEventListener("touchcancel", onRelease, { passive: true });
+
+    pad.addEventListener("mousedown", onPress);
+    pad.addEventListener("mouseup", onRelease);
+    pad.addEventListener("mouseleave", onRelease);
+
     pad.addEventListener("contextmenu", (e) => e.preventDefault());
     pad.addEventListener("dragstart", (e) => e.preventDefault());
 
-    // 先読み
-    loadAudio().catch(console.error);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        sound.pause();
+        setActive(false);
+      }
+    });
   </script>
 </body>
 </html>
