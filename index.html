@@ -13,8 +13,6 @@
 
 :root{
 --bg:#000;
---line:#fff;
---panel:#111;
 --glow:rgba(255,230,120,0.9);
 }
 
@@ -26,7 +24,6 @@ box-sizing:border-box;
 body{
 margin:0;
 background:var(--bg);
-color:white;
 font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
 }
 
@@ -39,6 +36,7 @@ align-items:center;
 justify-content:center;
 font-size:20px;
 font-weight:bold;
+color:white;
 }
 
 @media (orientation:landscape){
@@ -49,21 +47,19 @@ font-weight:bold;
 .app{
 max-width:520px;
 margin:auto;
-padding:20px;
+padding:24px;
 display:flex;
 flex-direction:column;
 align-items:center;
-gap:34px;
+gap:40px;
 }
+
+/* ロゴ */
 
 .logo{
 width:100%;
 max-width:500px;
 aspect-ratio:500/182;
-border:2px solid white;
-border-radius:10px;
-background:#111;
-overflow:hidden;
 display:flex;
 align-items:center;
 justify-content:center;
@@ -75,21 +71,22 @@ height:100%;
 object-fit:contain;
 }
 
+/* パッド */
+
 .pad{
 width:min(88vw,520px);
 aspect-ratio:1/1;
-border:2px solid white;
-border-radius:22px;
-background:#111;
 position:relative;
-overflow:hidden;
+overflow:visible;
 }
 
 .pad img{
 width:100%;
 height:100%;
-object-fit:cover;
+object-fit:contain;
 }
+
+/* 発光 */
 
 .pad::after{
 content:"";
@@ -98,18 +95,14 @@ inset:-14px;
 border-radius:30px;
 opacity:0;
 transition:opacity .05s;
+pointer-events:none;
 }
 
 .pad.active::after{
 opacity:1;
 box-shadow:
-0 0 25px var(--glow),
+0 0 30px var(--glow),
 0 0 80px var(--glow);
-}
-
-.status{
-font-size:13px;
-opacity:.7;
 }
 
 </style>
@@ -125,98 +118,4 @@ opacity:.7;
 <div class="app">
 
 <div class="logo">
-<img src="logo.png" alt="">
-</div>
-
-<div id="pad" class="pad">
-<img src="chi-button.png" alt="">
-</div>
-
-<div id="status" class="status">
-loading...
-</div>
-
-</div>
-
-<script>
-
-const AUDIO_FILE="chee.mp3"
-
-let audioContext
-let audioBuffer
-let ready=false
-
-async function init(){
-
-try{
-
-audioContext=new (window.AudioContext||window.webkitAudioContext)({
-latencyHint:"interactive"
-})
-
-const res=await fetch(AUDIO_FILE)
-
-if(!res.ok){
-throw new Error("audio load error")
-}
-
-const arr=await res.arrayBuffer()
-
-audioBuffer=await audioContext.decodeAudioData(arr)
-
-ready=true
-
-document.getElementById("status").innerText="ready"
-
-}catch(e){
-
-document.getElementById("status").innerText="audio load error"
-
-console.error(e)
-
-}
-
-}
-
-function play(){
-
-if(!ready)return
-
-const src=audioContext.createBufferSource()
-
-src.buffer=audioBuffer
-
-src.connect(audioContext.destination)
-
-src.start()
-
-}
-
-const pad=document.getElementById("pad")
-
-pad.addEventListener("pointerdown",async()=>{
-
-if(audioContext.state==="suspended"){
-await audioContext.resume()
-}
-
-pad.classList.add("active")
-
-play()
-
-})
-
-pad.addEventListener("pointerup",()=>{
-pad.classList.remove("active")
-})
-
-pad.addEventListener("pointercancel",()=>{
-pad.classList.remove("active")
-})
-
-init()
-
-</script>
-
-</body>
-</html>
+<img src="
