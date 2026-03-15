@@ -4,7 +4,9 @@
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport"
+content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+
 <meta name="theme-color" content="#000000">
 
 <title>Chi Sampler</title>
@@ -24,42 +26,49 @@ user-select:none;
 -webkit-user-select:none;
 }
 
-body{
+html,body{
 margin:0;
+width:100%;
+height:100%;
+overflow:hidden;
 background:var(--bg);
+}
+
+body{
 font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
 
-display:flex;
-justify-content:center;
+position:fixed;
+inset:0;
 
 touch-action:manipulation;
 overscroll-behavior:none;
 }
 
+/* アプリレイアウト */
+
 .app{
 
+position:fixed;
+inset:0;
+
 max-width:520px;
-width:100%;
-height:100vh;
+margin:auto;
 
 display:flex;
 flex-direction:column;
 align-items:center;
-
-/* 下寄せレイアウト */
 justify-content:flex-end;
 
-gap:30px;
+gap:28px;
 
-padding-bottom:80px;
 padding-left:24px;
 padding-right:24px;
+padding-bottom:calc(60px + env(safe-area-inset-bottom));
 }
 
 /* ロゴ */
 
 .logo{
-
 width:100%;
 max-width:500px;
 aspect-ratio:500/182;
@@ -68,14 +77,16 @@ display:flex;
 align-items:center;
 justify-content:center;
 
-margin-bottom:20px;
+flex:0 0 auto;
 }
 
 .logo img{
 width:100%;
 height:100%;
 object-fit:contain;
+
 pointer-events:none;
+-webkit-user-drag:none;
 }
 
 /* パッド */
@@ -88,7 +99,9 @@ aspect-ratio:1/1;
 position:relative;
 
 touch-action:manipulation;
+cursor:pointer;
 
+flex:0 0 auto;
 }
 
 .pad img{
@@ -98,6 +111,7 @@ height:100%;
 object-fit:contain;
 
 pointer-events:none;
+-webkit-user-drag:none;
 }
 
 /* 発光 */
@@ -105,8 +119,8 @@ pointer-events:none;
 .pad::after{
 
 content:"";
-position:absolute;
 
+position:absolute;
 inset:-14px;
 
 border-radius:30px;
@@ -184,7 +198,13 @@ src.start()
 
 const pad=document.getElementById("pad")
 
-pad.addEventListener("pointerdown",async()=>{
+function release(){
+pad.classList.remove("active")
+}
+
+pad.addEventListener("pointerdown",async(e)=>{
+
+e.preventDefault()
 
 if(audioContext.state==="suspended"){
 await audioContext.resume()
@@ -196,13 +216,18 @@ play()
 
 })
 
-pad.addEventListener("pointerup",()=>{
-pad.classList.remove("active")
-})
+pad.addEventListener("pointerup",release)
+pad.addEventListener("pointercancel",release)
+pad.addEventListener("pointerleave",release)
 
-pad.addEventListener("pointercancel",()=>{
-pad.classList.remove("active")
-})
+pad.addEventListener("contextmenu",(e)=>e.preventDefault())
+pad.addEventListener("dragstart",(e)=>e.preventDefault())
+
+document.addEventListener("gesturestart",(e)=>e.preventDefault())
+
+document.addEventListener("touchmove",(e)=>{
+if(e.scale!==1)e.preventDefault()
+},{passive:false})
 
 init()
 
