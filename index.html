@@ -2,10 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#000000">
   <title>Chi Sampler</title>
 
@@ -34,6 +31,8 @@
     body{
       font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
       overscroll-behavior:none;
+      position:fixed;
+      inset:0;
     }
 
     .app{
@@ -41,13 +40,11 @@
       min-height:100dvh;
       max-width:520px;
       margin:0 auto;
-
       display:flex;
       flex-direction:column;
       justify-content:flex-end;
       align-items:center;
       gap:24px;
-
       padding:
         max(24px, env(safe-area-inset-top))
         20px
@@ -81,10 +78,8 @@
       background:none;
       padding:0;
       margin:0;
-
       width:min(86vw, 420px);
       aspect-ratio:1 / 1;
-
       position:relative;
       display:block;
       flex:0 0 auto;
@@ -131,118 +126,91 @@
 
   <script>
     const AUDIO_FILE = "chee.mp3";
-
-    let audioContext = null;
-    let audioBuffer = null;
-    let loadingPromise = null;
-    let unlocked = false;
-    let pressLock = false;
-
-    function getAudioContext() {
-      if (!audioContext) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AC({
-          latencyHint: "interactive"
-        });
-      }
-      return audioContext;
-    }
-
-    async function unlockAudio() {
-      const ctx = getAudioContext();
-
-      if (ctx.state !== "running") {
-        await ctx.resume();
-      }
-
-      if (!unlocked) {
-        // iPhone Safari の初回無音対策
-        const silentBuffer = ctx.createBuffer(1, 1, 22050);
-        const silentSource = ctx.createBufferSource();
-        silentSource.buffer = silentBuffer;
-        silentSource.connect(ctx.destination);
-        silentSource.start(0);
-        unlocked = true;
-      }
-    }
-
-    async function loadAudioBuffer() {
-      if (audioBuffer) return audioBuffer;
-      if (loadingPromise) return loadingPromise;
-
-      loadingPromise = (async () => {
-        const ctx = getAudioContext();
-        const res = await fetch(AUDIO_FILE, { cache: "force-cache" });
-        if (!res.ok) {
-          throw new Error("音声ファイルの読み込みに失敗しました");
-        }
-        const arr = await res.arrayBuffer();
-        audioBuffer = await ctx.decodeAudioData(arr);
-        return audioBuffer;
-      })();
-
-      return loadingPromise;
-    }
-
-    function playBuffer() {
-      if (!audioContext || !audioBuffer) return;
-
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-
-      // 少しだけ音量を整える余地
-      const gain = audioContext.createGain();
-      gain.gain.value = 1.0;
-
-      source.connect(gain);
-      gain.connect(audioContext.destination);
-
-      source.start(0);
-    }
+    const POOL_SIZE = 8;
 
     const pad = document.getElementById("pad");
+
+    let audioPool = [];
+    let poolIndex = 0;
+    let initialized = false;
 
     function setActive(flag) {
       pad.classList.toggle("active", flag);
     }
 
-    async function handlePress(e) {
-      e.preventDefault();
+    function createAudioPool() {
+      audioPool = [];
+      for (let i = 0; i < POOL_SIZE; i++) {
+        const a = new Audio(AUDIO_FILE);
+        a.preload = "auto";
+        a.playsInline = true;
+        a.setAttribute("playsinline", "");
+        a.setAttribute("webkit-playsinline", "");
+        audioPool.push(a);
+      }
+    }
 
-      // iPhone で pointerdown + touchstart が両方来ることがあるので二重発火防止
-      if (pressLock) return;
-      pressLock = true;
+    async function unlockAudioPool() {
+      if (initialized) return;
+
+      createAudioPool();
+
+      // 初回タップ内で全要素を再生可能状態に寄せる
+      for (const a of audioPool) {
+        try {
+          a.muted = true;
+          a.currentTime = 0;
+          await a.play();
+          a.pause();
+          a.currentTime = 0;
+          a.muted = false;
+        } catch (e) {
+          console.error("unlock error:", e);
+        }
+      }
+
+      initialized = true;
+    }
+
+    function playFromPool() {
+      if (!initialized || audioPool.length === 0) return;
+
+      const a = audioPool[poolIndex];
+      poolIndex = (poolIndex + 1) % audioPool.length;
 
       try {
-        setActive(true);
-        await unlockAudio();
-        await loadAudioBuffer();
-        playBuffer();
-      } catch (err) {
-        console.error(err);
+        a.pause();
+        a.currentTime = 0;
+        a.play().catch((e) => {
+          console.error("play error:", e);
+        });
+      } catch (e) {
+        console.error("play error:", e);
       }
+    }
+
+    async function handlePress(e) {
+      e.preventDefault();
+      setActive(true);
+
+      if (!initialized) {
+        await unlockAudioPool();
+      }
+
+      playFromPool();
     }
 
     function handleRelease() {
       setActive(false);
-      pressLock = false;
     }
 
-    // 事前ロード
-    loadAudioBuffer().catch((err) => {
-      console.error(err);
-    });
-
-    // 本命
-    pad.addEventListener("pointerdown", handlePress);
-    pad.addEventListener("pointerup", handleRelease);
-    pad.addEventListener("pointercancel", handleRelease);
-    pad.addEventListener("pointerleave", handleRelease);
-
-    // iPhone Safari 保険
     pad.addEventListener("touchstart", handlePress, { passive: false });
     pad.addEventListener("touchend", handleRelease, { passive: true });
     pad.addEventListener("touchcancel", handleRelease, { passive: true });
+
+    pad.addEventListener("mousedown", handlePress);
+    pad.addEventListener("mouseup", handleRelease);
+    pad.addEventListener("mouseleave", handleRelease);
 
     pad.addEventListener("contextmenu", (e) => e.preventDefault());
     pad.addEventListener("dragstart", (e) => e.preventDefault());
@@ -250,7 +218,6 @@
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         setActive(false);
-        pressLock = false;
       }
     });
   </script>
