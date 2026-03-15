@@ -33,6 +33,7 @@
 
     body{
       font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+      overscroll-behavior:none;
     }
 
     .app{
@@ -106,7 +107,7 @@
       border-radius:28px;
       opacity:0;
       pointer-events:none;
-      transition:opacity .06s ease;
+      transition:opacity .05s ease;
     }
 
     .pad.active::after{
@@ -126,55 +127,130 @@
     <button id="pad" class="pad" type="button" aria-label="チーを再生">
       <img src="chi-button.png" alt="">
     </button>
-
-    <audio id="sound" preload="auto" playsinline webkit-playsinline>
-      <source src="chee.mp3" type="audio/mpeg">
-    </audio>
   </main>
 
   <script>
+    const AUDIO_FILE = "chee.mp3";
+
+    let audioContext = null;
+    let audioBuffer = null;
+    let loadingPromise = null;
+    let unlocked = false;
+    let pressLock = false;
+
+    function getAudioContext() {
+      if (!audioContext) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AC({
+          latencyHint: "interactive"
+        });
+      }
+      return audioContext;
+    }
+
+    async function unlockAudio() {
+      const ctx = getAudioContext();
+
+      if (ctx.state !== "running") {
+        await ctx.resume();
+      }
+
+      if (!unlocked) {
+        // iPhone Safari の初回無音対策
+        const silentBuffer = ctx.createBuffer(1, 1, 22050);
+        const silentSource = ctx.createBufferSource();
+        silentSource.buffer = silentBuffer;
+        silentSource.connect(ctx.destination);
+        silentSource.start(0);
+        unlocked = true;
+      }
+    }
+
+    async function loadAudioBuffer() {
+      if (audioBuffer) return audioBuffer;
+      if (loadingPromise) return loadingPromise;
+
+      loadingPromise = (async () => {
+        const ctx = getAudioContext();
+        const res = await fetch(AUDIO_FILE, { cache: "force-cache" });
+        if (!res.ok) {
+          throw new Error("音声ファイルの読み込みに失敗しました");
+        }
+        const arr = await res.arrayBuffer();
+        audioBuffer = await ctx.decodeAudioData(arr);
+        return audioBuffer;
+      })();
+
+      return loadingPromise;
+    }
+
+    function playBuffer() {
+      if (!audioContext || !audioBuffer) return;
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      // 少しだけ音量を整える余地
+      const gain = audioContext.createGain();
+      gain.gain.value = 1.0;
+
+      source.connect(gain);
+      gain.connect(audioContext.destination);
+
+      source.start(0);
+    }
+
     const pad = document.getElementById("pad");
-    const sound = document.getElementById("sound");
 
     function setActive(flag) {
       pad.classList.toggle("active", flag);
     }
 
-    async function playSound() {
+    async function handlePress(e) {
+      e.preventDefault();
+
+      // iPhone で pointerdown + touchstart が両方来ることがあるので二重発火防止
+      if (pressLock) return;
+      pressLock = true;
+
       try {
-        sound.pause();
-        sound.currentTime = 0;
-        await sound.play();
+        setActive(true);
+        await unlockAudio();
+        await loadAudioBuffer();
+        playBuffer();
       } catch (err) {
-        console.error("play error:", err);
+        console.error(err);
       }
     }
 
-    async function onPress(e) {
-      e.preventDefault();
-      setActive(true);
-      await playSound();
-    }
-
-    function onRelease() {
+    function handleRelease() {
       setActive(false);
+      pressLock = false;
     }
 
-    pad.addEventListener("touchstart", onPress, { passive: false });
-    pad.addEventListener("touchend", onRelease, { passive: true });
-    pad.addEventListener("touchcancel", onRelease, { passive: true });
+    // 事前ロード
+    loadAudioBuffer().catch((err) => {
+      console.error(err);
+    });
 
-    pad.addEventListener("mousedown", onPress);
-    pad.addEventListener("mouseup", onRelease);
-    pad.addEventListener("mouseleave", onRelease);
+    // 本命
+    pad.addEventListener("pointerdown", handlePress);
+    pad.addEventListener("pointerup", handleRelease);
+    pad.addEventListener("pointercancel", handleRelease);
+    pad.addEventListener("pointerleave", handleRelease);
+
+    // iPhone Safari 保険
+    pad.addEventListener("touchstart", handlePress, { passive: false });
+    pad.addEventListener("touchend", handleRelease, { passive: true });
+    pad.addEventListener("touchcancel", handleRelease, { passive: true });
 
     pad.addEventListener("contextmenu", (e) => e.preventDefault());
     pad.addEventListener("dragstart", (e) => e.preventDefault());
 
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
-        sound.pause();
         setActive(false);
+        pressLock = false;
       }
     });
   </script>
